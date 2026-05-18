@@ -88,5 +88,6 @@ For automatic Firebase deploys from GitHub, add these repository secrets:
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
+- `VITE_FIREBASE_MEASUREMENT_ID`
 
 The `FIREBASE_SERVICE_ACCOUNT` value should be a service account JSON with permission to deploy Hosting, Functions, Firestore rules/indexes, and Storage rules.
