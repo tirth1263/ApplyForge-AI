@@ -86,7 +86,6 @@ After that, run `npm run github:push -- -Message "Describe your change"` wheneve
 
 For automatic Firebase deploys from GitHub, add these repository secrets:
 
-- `FIREBASE_PROJECT_ID`
 - `FIREBASE_SERVICE_ACCOUNT`
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -96,3 +95,5 @@ For automatic Firebase deploys from GitHub, add these repository secrets:
 - `VITE_FIREBASE_MEASUREMENT_ID`
 
 The `FIREBASE_SERVICE_ACCOUNT` value should be a service account JSON with permission to deploy Hosting, Functions, Firestore rules/indexes, and Storage rules.
+
+The GitHub Actions workflow always builds the app on push. Firebase deploy is skipped unless `FIREBASE_SERVICE_ACCOUNT` is configured, which keeps normal pushes green while credentials are being set up.
