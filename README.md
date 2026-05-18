@@ -1,4 +1,4 @@
-# ApplyPilot AI
+# ApplyAtlas AI
 
 A professional job application workspace for searching roles, tailoring a resume to each job description, generating cover letters, saving jobs, and storing application history in Firebase.
 
@@ -74,7 +74,7 @@ Your installed GitHub CLI currently needs a fresh login before this project can 
 
 ```powershell
 gh auth login -h github.com
-npm run github:push -- -RepoName applypilot-ai-job-application -Visibility private -Message "Initial ApplyPilot AI build"
+npm run github:push -- -RepoName applyatlas-ai -Visibility private -Message "Initial ApplyAtlas AI build"
 ```
 
 After that, run `npm run github:push -- -Message "Describe your change"` whenever you want to commit and push updates.

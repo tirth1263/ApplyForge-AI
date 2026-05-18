@@ -10,8 +10,8 @@ import type {
   SavedApplication,
 } from '../types'
 
-const localApplicationsKey = 'applypilot.applications'
-const localJobsKey = 'applypilot.savedJobs'
+const localApplicationsKey = 'applyatlas.applications'
+const localJobsKey = 'applyatlas.savedJobs'
 
 type GenerateResponse = GeneratedAssets
 type SearchResponse = { jobs: Job[]; providers: string[] }

@@ -220,7 +220,7 @@ function App() {
             <Sparkles size={18} />
           </div>
           <div>
-            <strong>ApplyPilot AI</strong>
+            <strong>ApplyAtlas AI</strong>
             <span>Job command center</span>
           </div>
         </div>

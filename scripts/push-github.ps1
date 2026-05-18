@@ -1,8 +1,8 @@
 param(
-  [string]$RepoName = "applypilot-ai-job-application",
+  [string]$RepoName = "applyatlas-ai",
   [ValidateSet("private", "public")]
   [string]$Visibility = "private",
-  [string]$Message = "Update ApplyPilot AI"
+  [string]$Message = "Update ApplyAtlas AI"
 )
 
 $ErrorActionPreference = "Stop"
