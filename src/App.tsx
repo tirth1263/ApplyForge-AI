@@ -1,48 +1,82 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
 import {
   BriefcaseBusiness,
   Building2,
+  CalendarClock,
   Check,
+  ChevronRight,
   ClipboardList,
+  Cloud,
   Copy,
+  Database,
   Download,
   ExternalLink,
   FileText,
+  FileUp,
   Filter,
   Globe2,
   LayoutDashboard,
+  Link as LinkIcon,
   Loader2,
-  Lock,
   LogOut,
   MapPin,
   PenLine,
-  RefreshCw,
   Save,
   Search,
-  Settings,
+  Send,
+  ShieldCheck,
   Sparkles,
+  Target,
+  Trash2,
   UserRound,
 } from 'lucide-react'
 import './App.css'
 import {
-  firebaseConfigIsComplete,
   auth,
+  firebaseConfigIsComplete,
   signInWithGoogle,
   signOutOfGoogle,
 } from './lib/firebase'
 import {
+  deleteSavedJob,
+  emptyProfile,
   generateApplicationAssets,
   saveApplication,
   saveJob,
+  saveUserProfile,
   searchJobs,
+  subscribeToApplications,
+  subscribeToSavedJobs,
+  subscribeToUserProfile,
+  updateApplicationStatus,
+  updateSavedJobStatus,
+  uploadResumeFile,
 } from './lib/applicationService'
 import { mockJobs } from './data/mockJobs'
-import type { ApplicationForm, GeneratedAssets, Job, JobFilters } from './types'
+import type {
+  ApplicationForm,
+  ApplicationStatus,
+  GeneratedAssets,
+  Job,
+  JobFilters,
+  SavedApplication,
+  SavedJob,
+  UserProfile,
+} from './types'
+
+const statuses: ApplicationStatus[] = [
+  'Saved',
+  'Tailored',
+  'Applied',
+  'Interview',
+  'Offer',
+  'Rejected',
+]
 
 const initialFilters: JobFilters = {
-  query: 'AI product',
+  query: 'AI product manager',
   location: 'Remote',
   workMode: 'any',
   seniority: 'Any level',
@@ -55,24 +89,18 @@ const initialFilters: JobFilters = {
 const initialForm: ApplicationForm = {
   role: 'AI Product Manager',
   company: 'Northstar Systems',
-  resume:
-    'Paste your master resume here. Include recent roles, measurable wins, tools, education, certifications, and links you want represented.',
+  resume: '',
   jobDescription:
-    'Paste the target job description here. The AI will extract requirements, keywords, and employer priorities before tailoring the resume and cover letter.',
+    'Own AI roadmap, translate customer needs into product requirements, partner with engineering and growth, and launch responsible AI features for enterprise teams.',
   tone: 'Confident and concise',
 }
-
-const setupItems = [
-  'Firebase project selected',
-  'Web app environment added',
-  'OpenAI secret stored in Functions',
-  'Job provider keys stored as secrets',
-  'GitHub remote connected',
-]
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(Boolean(auth))
+  const [profile, setProfile] = useState<UserProfile>(emptyProfile)
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([])
+  const [applications, setApplications] = useState<SavedApplication[]>([])
   const [filters, setFilters] = useState<JobFilters>(initialFilters)
   const [jobs, setJobs] = useState<Job[]>(mockJobs)
   const [providers, setProviders] = useState<string[]>(['Local demo feed'])
@@ -83,45 +111,91 @@ function App() {
   const [searching, setSearching] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [status, setStatus] = useState('Ready')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
+  const [status, setStatus] = useState('Workspace ready')
 
   useEffect(() => {
-    if (!auth) {
-      return
-    }
+    if (!auth) return
 
     return onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser)
       setAuthLoading(false)
+      setStatus(nextUser ? 'Google sign-in active' : 'Signed out')
     })
   }, [])
 
-  const stats = useMemo(
-    () => [
-      { label: 'Open roles', value: jobs.length.toString(), icon: BriefcaseBusiness },
-      { label: 'Sources', value: providers.length.toString(), icon: Globe2 },
-      { label: 'Saved user', value: user ? 'Cloud' : 'Local', icon: Lock },
-      { label: 'AI studio', value: generated ? 'Ready' : 'Draft', icon: Sparkles },
-    ],
-    [generated, jobs.length, providers.length, user],
+  useEffect(() => {
+    const unsubProfile = subscribeToUserProfile(user?.uid, (nextProfile) => {
+      const fallback = {
+        ...emptyProfile,
+        fullName: user?.displayName || '',
+        portfolioUrl: '',
+      }
+      const resolved = nextProfile || fallback
+      setProfile(resolved)
+      if (resolved.masterResume) {
+        setForm((current) => ({ ...current, resume: resolved.masterResume }))
+      }
+    })
+    const unsubJobs = subscribeToSavedJobs(user?.uid, setSavedJobs)
+    const unsubApplications = subscribeToApplications(user?.uid, setApplications)
+
+    return () => {
+      unsubProfile()
+      unsubJobs()
+      unsubApplications()
+    }
+  }, [user?.uid, user?.displayName])
+
+  const companySignals = useMemo(() => buildCompanySignals(jobs), [jobs])
+
+  const statusCounts = useMemo(
+    () =>
+      statuses.reduce<Record<ApplicationStatus, number>>(
+        (acc, item) => {
+          acc[item] =
+            applications.filter((application) => application.status === item).length +
+            savedJobs.filter((job) => job.status === item).length
+          return acc
+        },
+        {
+          Saved: 0,
+          Tailored: 0,
+          Applied: 0,
+          Interview: 0,
+          Offer: 0,
+          Rejected: 0,
+        },
+      ),
+    [applications, savedJobs],
   )
 
-  const completion = useMemo(() => {
+  const metrics = useMemo(
+    () => [
+      { label: 'Open roles', value: jobs.length, icon: BriefcaseBusiness },
+      { label: 'Saved jobs', value: savedJobs.length, icon: Save },
+      { label: 'Applications', value: applications.length, icon: ClipboardList },
+      { label: 'Interviews', value: statusCounts.Interview, icon: CalendarClock },
+    ],
+    [applications.length, jobs.length, savedJobs.length, statusCounts.Interview],
+  )
+
+  const setupCompletion = useMemo(() => {
     const checks = [
       firebaseConfigIsComplete,
       Boolean(user),
-      Boolean(import.meta.env.VITE_FIREBASE_PROJECT_ID),
-      Boolean(generated),
+      Boolean(profile.masterResume || profile.resumeFileUrl),
+      applications.length > 0,
       providers.some((provider) => provider !== 'Local demo feed'),
     ]
-    return Math.round((checks.filter(Boolean).length / setupItems.length) * 100)
-  }, [generated, providers, user])
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+  }, [applications.length, profile.masterResume, profile.resumeFileUrl, providers, user])
 
   async function handleSignIn() {
     try {
       setStatus('Opening Google sign-in')
       await signInWithGoogle()
-      setStatus('Signed in')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Sign-in failed')
     }
@@ -129,12 +203,11 @@ function App() {
 
   async function handleSignOut() {
     await signOutOfGoogle()
-    setStatus('Signed out')
   }
 
   async function handleSearch() {
     setSearching(true)
-    setStatus('Searching jobs')
+    setStatus('Searching global roles')
     try {
       const response = await searchJobs(filters)
       setJobs(response.jobs)
@@ -148,24 +221,45 @@ function App() {
     }
   }
 
-  async function handleGenerate() {
-    setGenerating(true)
-    setStatus('Generating application assets')
+  async function handleProfileSave(nextProfile = profile) {
+    setProfileSaving(true)
+    setStatus('Saving profile')
     try {
-      const assets = await generateApplicationAssets(form)
-      setGenerated(assets)
-      setActiveOutput('resume')
-      setStatus('Resume and cover letter generated')
-      await saveApplication(user?.uid, {
-        role: form.role,
-        company: form.company,
-        jobId: selectedJob?.id,
-        assets,
-      })
+      await saveUserProfile(user?.uid, nextProfile)
+      setForm((current) => ({ ...current, resume: nextProfile.masterResume }))
+      setStatus(user ? 'Profile saved to Firebase' : 'Profile saved locally')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Generation failed')
+      setStatus(error instanceof Error ? error.message : 'Profile save failed')
     } finally {
-      setGenerating(false)
+      setProfileSaving(false)
+    }
+  }
+
+  async function handleResumeUpload(file: File | undefined) {
+    if (!file) return
+    if (!user) {
+      setStatus('Sign in with Google before uploading files')
+      return
+    }
+
+    setUploadProgress(0)
+    setStatus('Uploading resume')
+    try {
+      const text = await readResumeText(file)
+      const upload = await uploadResumeFile(user.uid, file, setUploadProgress)
+      const nextProfile = {
+        ...profile,
+        masterResume: text || profile.masterResume,
+        resumeFileName: upload.fileName,
+        resumeFileUrl: upload.url,
+      }
+      setProfile(nextProfile)
+      await handleProfileSave(nextProfile)
+      setStatus('Resume uploaded to Firebase Storage')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Resume upload failed')
+    } finally {
+      setUploadProgress(null)
     }
   }
 
@@ -181,15 +275,59 @@ function App() {
     }
   }
 
+  async function handleGenerate() {
+    if (firebaseConfigIsComplete && !user) {
+      setStatus('Sign in with Google to generate and save documents')
+      return
+    }
+
+    setGenerating(true)
+    setStatus('Generating resume and letter')
+    try {
+      const assets = await generateApplicationAssets(form)
+      setGenerated(assets)
+      setActiveOutput('resume')
+      await saveApplication(user?.uid, {
+        role: form.role,
+        company: form.company,
+        jobId: selectedJob?.id,
+        job: selectedJob || undefined,
+        assets,
+        status: 'Tailored',
+      })
+      if (selectedJob) {
+        await saveJob(user?.uid, selectedJob)
+      }
+      setStatus('Application package saved')
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Generation failed')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   function loadJobIntoStudio(job: Job) {
     setSelectedJob(job)
     setForm((current) => ({
       ...current,
       role: job.title,
       company: job.company,
+      resume: profile.masterResume || current.resume,
       jobDescription: job.description,
     }))
-    setStatus(`Loaded ${job.company} into studio`)
+    setStatus(`Loaded ${job.company}`)
+  }
+
+  function loadApplication(application: SavedApplication) {
+    setGenerated(application.assets)
+    setActiveOutput('resume')
+    setForm((current) => ({
+      ...current,
+      role: application.role,
+      company: application.company,
+      jobDescription: application.job?.description || current.jobDescription,
+    }))
+    setStatus(`Opened ${application.company} package`)
   }
 
   function copyCurrentOutput() {
@@ -206,7 +344,7 @@ function App() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${form.company || 'company'}-${form.role || 'role'}-${activeOutput}.txt`
+    link.download = `${slugify(form.company || 'company')}-${slugify(form.role || 'role')}-${activeOutput}.txt`
     link.click()
     URL.revokeObjectURL(url)
     setStatus('Downloaded output')
@@ -221,7 +359,7 @@ function App() {
           </div>
           <div>
             <strong>ApplyAtlas AI</strong>
-            <span>Job command center</span>
+            <span>Global job application OS</span>
           </div>
         </div>
 
@@ -232,46 +370,47 @@ function App() {
           </a>
           <a href="#jobs">
             <Search size={18} />
-            Job Search
+            Jobs
+          </a>
+          <a href="#vault">
+            <FileText size={18} />
+            Resume Vault
           </a>
           <a href="#studio">
             <PenLine size={18} />
-            Resume Tailor
+            AI Studio
           </a>
           <a href="#tracker">
             <ClipboardList size={18} />
             Tracker
           </a>
-          <a href="#setup">
-            <Settings size={18} />
-            Firebase
-          </a>
         </nav>
 
         <div className="sidebar-foot">
-          <div className="sync-meter">
+          <div className="cloud-card">
             <div>
-              <span>Setup</span>
-              <strong>{completion}%</strong>
+              <Cloud size={17} />
+              <span>{firebaseConfigIsComplete ? 'Firebase connected' : 'Demo mode'}</span>
             </div>
-            <progress value={completion} max="100" aria-label="Setup completion" />
+            <strong>{setupCompletion}% ready</strong>
+            <progress value={setupCompletion} max="100" aria-label="Workspace completion" />
           </div>
-          <p>{firebaseConfigIsComplete ? 'Firebase config detected' : 'Demo mode active'}</p>
+          <p>{user ? user.email : 'Google sign-in required for cloud saves'}</p>
         </div>
       </aside>
 
       <main className="workspace" id="dashboard">
         <header className="topbar">
           <div>
-            <span className="eyebrow">Global application workspace</span>
-            <h1>Find roles, tailor documents, and track every application.</h1>
+            <span className="eyebrow">ApplyForge Firebase project</span>
+            <h1>Search global roles, tailor every application, and track the full pipeline.</h1>
           </div>
           <div className="account-area">
             <span className="status-pill">{status}</span>
             {user ? (
               <button className="button secondary" type="button" onClick={handleSignOut}>
                 <LogOut size={17} />
-                {user.displayName || 'Sign out'}
+                Sign out
               </button>
             ) : (
               <button
@@ -279,27 +418,22 @@ function App() {
                 type="button"
                 onClick={handleSignIn}
                 disabled={!firebaseConfigIsComplete || authLoading}
-                title={
-                  firebaseConfigIsComplete
-                    ? 'Sign in with Google'
-                    : 'Add Firebase web config to enable sign-in'
-                }
               >
                 <UserRound size={17} />
-                {authLoading ? 'Checking' : 'Sign in'}
+                {authLoading ? 'Checking' : 'Google sign in'}
               </button>
             )}
           </div>
         </header>
 
-        <section className="stat-strip" aria-label="Workspace metrics">
-          {stats.map((item) => {
-            const Icon = item.icon
+        <section className="metric-grid" aria-label="Workspace metrics">
+          {metrics.map((metric) => {
+            const Icon = metric.icon
             return (
-              <div className="metric" key={item.label}>
+              <div className="metric" key={metric.label}>
                 <Icon size={19} />
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
               </div>
             )
           })}
@@ -308,39 +442,38 @@ function App() {
         <section className="workspace-grid">
           <div className="primary-column">
             <section className="tool-panel" id="jobs" aria-labelledby="jobs-title">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Live market scan</span>
-                  <h2 id="jobs-title">Job Search</h2>
-                </div>
-                <button className="icon-button" type="button" onClick={handleSearch} title="Refresh jobs">
-                  {searching ? <Loader2 className="spin" size={18} /> : <RefreshCw size={18} />}
-                </button>
-              </div>
+              <PanelTitle
+                eyebrow="Worldwide role search"
+                title="Jobs and Hiring Companies"
+                icon={<Globe2 size={20} />}
+                action={
+                  <button className="button primary" type="button" onClick={handleSearch}>
+                    {searching ? <Loader2 className="spin" size={17} /> : <Search size={17} />}
+                    Search
+                  </button>
+                }
+              />
 
               <div className="filters">
-                <label>
-                  <Search size={16} />
+                <FieldIcon icon={<Search size={16} />}>
                   <input
                     value={filters.query}
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, query: event.target.value }))
                     }
-                    placeholder="Role, skill, company"
+                    placeholder="Role, company, or skill"
                   />
-                </label>
-                <label>
-                  <MapPin size={16} />
+                </FieldIcon>
+                <FieldIcon icon={<MapPin size={16} />}>
                   <input
                     value={filters.location}
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, location: event.target.value }))
                     }
-                    placeholder="City, country, remote"
+                    placeholder="Remote, city, or country"
                   />
-                </label>
-                <label>
-                  <Globe2 size={16} />
+                </FieldIcon>
+                <FieldIcon icon={<Globe2 size={16} />}>
                   <select
                     value={filters.workMode}
                     onChange={(event) =>
@@ -355,9 +488,8 @@ function App() {
                     <option value="hybrid">Hybrid</option>
                     <option value="onsite">On-site</option>
                   </select>
-                </label>
-                <label>
-                  <BriefcaseBusiness size={16} />
+                </FieldIcon>
+                <FieldIcon icon={<Target size={16} />}>
                   <select
                     value={filters.seniority}
                     onChange={(event) =>
@@ -371,9 +503,8 @@ function App() {
                     <option>Lead</option>
                     <option>Executive</option>
                   </select>
-                </label>
-                <label>
-                  <Filter size={16} />
+                </FieldIcon>
+                <FieldIcon icon={<Filter size={16} />}>
                   <select
                     value={filters.jobType}
                     onChange={(event) =>
@@ -385,11 +516,23 @@ function App() {
                     <option>Part-time</option>
                     <option>Internship</option>
                   </select>
-                </label>
-                <button className="button primary search-button" type="button" onClick={handleSearch}>
-                  {searching ? <Loader2 className="spin" size={17} /> : <Search size={17} />}
-                  Search
-                </button>
+                </FieldIcon>
+                <FieldIcon icon={<CalendarClock size={16} />}>
+                  <select
+                    value={filters.postedWithinDays}
+                    onChange={(event) =>
+                      setFilters((current) => ({
+                        ...current,
+                        postedWithinDays: Number(event.target.value),
+                      }))
+                    }
+                  >
+                    <option value={7}>7 days</option>
+                    <option value={14}>14 days</option>
+                    <option value={30}>30 days</option>
+                    <option value={90}>90 days</option>
+                  </select>
+                </FieldIcon>
               </div>
 
               <div className="provider-line">
@@ -417,7 +560,7 @@ function App() {
                         <p>{job.description}</p>
                         <div className="tag-row">
                           {job.salary && <span>{job.salary}</span>}
-                          {job.tags.slice(0, 4).map((tag) => (
+                          {job.tags.slice(0, 5).map((tag) => (
                             <span key={tag}>{tag}</span>
                           ))}
                         </div>
@@ -443,31 +586,28 @@ function App() {
                     </article>
                   ))
                 ) : (
-                  <div className="empty-state">
-                    <Search size={24} />
-                    <strong>No matching roles</strong>
-                    <span>Broaden the filters or add provider API keys.</span>
-                  </div>
+                  <EmptyState icon={<Search size={24} />} title="No matching roles" detail="Try a broader search." />
                 )}
               </div>
             </section>
 
             <section className="tool-panel studio-panel" id="studio" aria-labelledby="studio-title">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">AI application studio</span>
-                  <h2 id="studio-title">Resume Tailor and Cover Letter</h2>
-                </div>
-                <button
-                  className="button primary"
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={generating}
-                >
-                  {generating ? <Loader2 className="spin" size={17} /> : <Sparkles size={17} />}
-                  Generate
-                </button>
-              </div>
+              <PanelTitle
+                eyebrow="AI application studio"
+                title="Tailored Resume and Cover Letter"
+                icon={<Sparkles size={20} />}
+                action={
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={generating}
+                  >
+                    {generating ? <Loader2 className="spin" size={17} /> : <Send size={17} />}
+                    Generate
+                  </button>
+                }
+              />
 
               <div className="studio-grid">
                 <div className="form-stack">
@@ -492,7 +632,7 @@ function App() {
                     </label>
                   </div>
                   <label>
-                    Tone
+                    Writing style
                     <select
                       value={form.tone}
                       onChange={(event) =>
@@ -506,16 +646,18 @@ function App() {
                     </select>
                   </label>
                   <label>
-                    Master Resume
+                    Master resume
                     <textarea
                       value={form.resume}
-                      onChange={(event) =>
-                        setForm((current) => ({ ...current, resume: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        const resume = event.target.value
+                        setForm((current) => ({ ...current, resume }))
+                        setProfile((current) => ({ ...current, masterResume: resume }))
+                      }}
                     />
                   </label>
                   <label>
-                    Job Description
+                    Job description
                     <textarea
                       value={form.jobDescription}
                       onChange={(event) =>
@@ -573,68 +715,236 @@ function App() {
                 </div>
               </div>
             </section>
-          </div>
 
-          <aside className="insights-column" aria-label="Application insights">
-            <section className="tool-panel compact" id="tracker">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Pipeline</span>
-                  <h2>Application Tracker</h2>
-                </div>
-                <ClipboardList size={20} />
-              </div>
-              <div className="pipeline">
-                {['Saved', 'Tailored', 'Applied', 'Interviewing'].map((stage, index) => (
-                  <div key={stage}>
-                    <span>{stage}</span>
-                    <strong>{index === 0 ? jobs.length : index === 1 && generated ? 1 : 0}</strong>
+            <section className="tool-panel" id="tracker">
+              <PanelTitle
+                eyebrow="Application pipeline"
+                title="Saved Jobs and Generated Packages"
+                icon={<ClipboardList size={20} />}
+              />
+
+              <div className="status-grid">
+                {statuses.map((item) => (
+                  <div key={item}>
+                    <span>{item}</span>
+                    <strong>{statusCounts[item]}</strong>
                   </div>
                 ))}
               </div>
+
+              <div className="tracker-grid">
+                <div>
+                  <h3>Saved jobs</h3>
+                  <div className="compact-list">
+                    {savedJobs.length ? (
+                      savedJobs.map((job) => (
+                        <article key={job.id} className="compact-item">
+                          <div>
+                            <strong>{job.title}</strong>
+                            <span>{job.company}</span>
+                          </div>
+                          <select
+                            value={job.status}
+                            onChange={(event) =>
+                              updateSavedJobStatus(user?.uid, job.id, event.target.value as ApplicationStatus)
+                            }
+                          >
+                            {statuses.map((item) => (
+                              <option key={item}>{item}</option>
+                            ))}
+                          </select>
+                          <button
+                            className="icon-button"
+                            type="button"
+                            title="Remove saved job"
+                            onClick={() => deleteSavedJob(user?.uid, job.id)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </article>
+                      ))
+                    ) : (
+                      <EmptyState icon={<Save size={22} />} title="No saved jobs" detail="Save roles from search." />
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <h3>Application packages</h3>
+                  <div className="compact-list">
+                    {applications.length ? (
+                      applications.map((application) => (
+                        <article key={application.id} className="compact-item application-item">
+                          <button type="button" onClick={() => loadApplication(application)}>
+                            <strong>{application.role}</strong>
+                            <span>
+                              {application.company} · {formatDate(application.createdAt)}
+                            </span>
+                          </button>
+                          <select
+                            value={application.status}
+                            onChange={(event) =>
+                              updateApplicationStatus(
+                                user?.uid,
+                                application.id,
+                                event.target.value as ApplicationStatus,
+                              )
+                            }
+                          >
+                            {statuses.map((item) => (
+                              <option key={item}>{item}</option>
+                            ))}
+                          </select>
+                        </article>
+                      ))
+                    ) : (
+                      <EmptyState
+                        icon={<Sparkles size={22} />}
+                        title="No packages yet"
+                        detail="Generate one from the AI studio."
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <aside className="insights-column" aria-label="Workspace controls">
+            <section className="tool-panel compact" id="vault">
+              <PanelTitle eyebrow="Candidate profile" title="Resume Vault" icon={<FileUp size={20} />} />
+
+              <div className="profile-form">
+                <label>
+                  Full name
+                  <input
+                    value={profile.fullName}
+                    onChange={(event) =>
+                      setProfile((current) => ({ ...current, fullName: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Headline
+                  <input
+                    value={profile.headline}
+                    onChange={(event) =>
+                      setProfile((current) => ({ ...current, headline: event.target.value }))
+                    }
+                    placeholder="Product, engineering, operations..."
+                  />
+                </label>
+                <label>
+                  Target roles
+                  <input
+                    value={profile.targetRoles}
+                    onChange={(event) =>
+                      setProfile((current) => ({ ...current, targetRoles: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Preferred locations
+                  <input
+                    value={profile.preferredLocations}
+                    onChange={(event) =>
+                      setProfile((current) => ({ ...current, preferredLocations: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Portfolio URL
+                  <input
+                    value={profile.portfolioUrl}
+                    onChange={(event) =>
+                      setProfile((current) => ({ ...current, portfolioUrl: event.target.value }))
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="upload-row">
+                <label className="file-control">
+                  <FileUp size={17} />
+                  Resume file
+                  <input
+                    type="file"
+                    accept=".txt,.md,.pdf,.doc,.docx"
+                    onChange={(event) => handleResumeUpload(event.target.files?.[0])}
+                  />
+                </label>
+                {profile.resumeFileUrl && (
+                  <a
+                    className="icon-button"
+                    href={profile.resumeFileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open uploaded resume"
+                  >
+                    <LinkIcon size={17} />
+                  </a>
+                )}
+              </div>
+              {uploadProgress !== null && <progress value={uploadProgress} max="100" aria-label="Upload progress" />}
+              {profile.resumeFileName && <p className="quiet-line">{profile.resumeFileName}</p>}
+
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => handleProfileSave()}
+                disabled={profileSaving}
+              >
+                {profileSaving ? <Loader2 className="spin" size={17} /> : <Save size={17} />}
+                Save profile
+              </button>
             </section>
 
             <section className="tool-panel compact">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Hiring map</span>
-                  <h2>Global Signals</h2>
-                </div>
-                <Globe2 size={20} />
-              </div>
-              <div className="region-grid">
-                {['Americas', 'Europe', 'APAC', 'Remote'].map((region, index) => (
-                  <div key={region}>
-                    <span>{region}</span>
-                    <strong>{Math.max(1, jobs.length - index)}</strong>
-                  </div>
+              <PanelTitle eyebrow="Company intelligence" title="Hiring Signals" icon={<Building2 size={20} />} />
+              <div className="company-list">
+                {companySignals.map((company) => (
+                  <button
+                    key={company.name}
+                    type="button"
+                    onClick={() =>
+                      setFilters((current) => ({
+                        ...current,
+                        query: company.name,
+                        location: company.locations[0] || current.location,
+                      }))
+                    }
+                  >
+                    <div>
+                      <strong>{company.name}</strong>
+                      <span>{company.locations.slice(0, 2).join(' · ')}</span>
+                    </div>
+                    <span>{company.count}</span>
+                    <ChevronRight size={16} />
+                  </button>
                 ))}
               </div>
             </section>
 
             <section className="tool-panel compact" id="setup">
-              <div className="panel-heading">
-                <div>
-                  <span className="eyebrow">Launch readiness</span>
-                  <h2>Firebase and GitHub</h2>
-                </div>
-                <Check size={20} />
-              </div>
+              <PanelTitle eyebrow="Firebase services" title="Cloud Readiness" icon={<ShieldCheck size={20} />} />
               <ul className="setup-list">
-                {setupItems.map((item, index) => {
-                  const done =
-                    (index === 0 && firebaseConfigIsComplete) ||
-                    (index === 1 && firebaseConfigIsComplete) ||
-                    (index === 2 && false) ||
-                    (index === 3 && providers.some((provider) => provider !== 'Local demo feed')) ||
-                    (index === 4 && false)
-                  return (
-                    <li key={item} className={done ? 'done' : ''}>
-                      <span>{done ? <Check size={14} /> : index + 1}</span>
-                      {item}
-                    </li>
-                  )
-                })}
+                <ReadinessItem done={firebaseConfigIsComplete} icon={<Database size={14} />} label="Web config loaded" />
+                <ReadinessItem done={Boolean(user)} icon={<UserRound size={14} />} label="Google Auth session" />
+                <ReadinessItem
+                  done={Boolean(profile.masterResume || profile.resumeFileUrl)}
+                  icon={<FileText size={14} />}
+                  label="Resume stored"
+                />
+                <ReadinessItem
+                  done={applications.length > 0}
+                  icon={<Sparkles size={14} />}
+                  label="AI package saved"
+                />
+                <ReadinessItem
+                  done={providers.some((provider) => provider !== 'Local demo feed')}
+                  icon={<Globe2 size={14} />}
+                  label="Live job provider"
+                />
               </ul>
             </section>
           </aside>
@@ -644,7 +954,79 @@ function App() {
   )
 }
 
-function getCurrentOutput(generated: GeneratedAssets | null, activeOutput: 'resume' | 'letter' | 'notes') {
+function PanelTitle({
+  eyebrow,
+  title,
+  icon,
+  action,
+}: {
+  eyebrow: string
+  title: string
+  icon: ReactNode
+  action?: ReactNode
+}) {
+  return (
+    <div className="panel-heading">
+      <div>
+        <span className="eyebrow">{eyebrow}</span>
+        <h2>{title}</h2>
+      </div>
+      <div className="panel-heading-actions">
+        {action}
+        <span className="panel-icon">{icon}</span>
+      </div>
+    </div>
+  )
+}
+
+function FieldIcon({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+  return (
+    <label className="field-icon">
+      {icon}
+      {children}
+    </label>
+  )
+}
+
+function EmptyState({
+  icon,
+  title,
+  detail,
+}: {
+  icon: ReactNode
+  title: string
+  detail: string
+}) {
+  return (
+    <div className="empty-state">
+      {icon}
+      <strong>{title}</strong>
+      <span>{detail}</span>
+    </div>
+  )
+}
+
+function ReadinessItem({
+  done,
+  icon,
+  label,
+}: {
+  done: boolean
+  icon: ReactNode
+  label: string
+}) {
+  return (
+    <li className={done ? 'done' : ''}>
+      <span>{done ? <Check size={14} /> : icon}</span>
+      {label}
+    </li>
+  )
+}
+
+function getCurrentOutput(
+  generated: GeneratedAssets | null,
+  activeOutput: 'resume' | 'letter' | 'notes',
+) {
   if (!generated) return ''
 
   if (activeOutput === 'resume') return generated.tailoredResume
@@ -656,6 +1038,41 @@ function getCurrentOutput(generated: GeneratedAssets | null, activeOutput: 'resu
     'Keywords',
     generated.keywords.join(', '),
   ].join('\n')
+}
+
+function buildCompanySignals(jobs: Job[]) {
+  const signals = jobs.reduce<
+    Record<string, { name: string; count: number; locations: string[]; tags: string[] }>
+  >((acc, job) => {
+    acc[job.company] ||= { name: job.company, count: 0, locations: [], tags: [] }
+    acc[job.company].count += 1
+    acc[job.company].locations = Array.from(new Set([...acc[job.company].locations, job.location]))
+    acc[job.company].tags = Array.from(new Set([...acc[job.company].tags, ...job.tags]))
+    return acc
+  }, {})
+
+  return Object.values(signals)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 6)
+}
+
+async function readResumeText(file: File) {
+  const textFriendly =
+    file.type.startsWith('text/') || /\.(txt|md|markdown|csv)$/i.test(file.name)
+  return textFriendly ? file.text() : ''
+}
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+}
+
+function formatDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'recently'
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date)
 }
 
 export default App

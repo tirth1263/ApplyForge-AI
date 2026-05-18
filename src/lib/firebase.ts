@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth'
 import { getFirestore, type Firestore } from 'firebase/firestore'
 import { getFunctions, type Functions } from 'firebase/functions'
+import { getStorage, type FirebaseStorage } from 'firebase/storage'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -32,15 +33,17 @@ let app: FirebaseApp | undefined
 let auth: Auth | undefined
 let db: Firestore | undefined
 let functions: Functions | undefined
+let storage: FirebaseStorage | undefined
 
 if (firebaseConfigIsComplete) {
   app = initializeApp(firebaseConfig)
   auth = getAuth(app)
   db = getFirestore(app)
   functions = getFunctions(app, import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1')
+  storage = getStorage(app)
 }
 
-export { app, auth, db, functions }
+export { app, auth, db, functions, storage }
 
 export async function signInWithGoogle() {
   if (!auth) {

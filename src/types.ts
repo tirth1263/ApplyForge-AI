@@ -1,5 +1,25 @@
 export type WorkMode = 'remote' | 'hybrid' | 'onsite' | 'any'
 
+export type ApplicationStatus =
+  | 'Saved'
+  | 'Tailored'
+  | 'Applied'
+  | 'Interview'
+  | 'Offer'
+  | 'Rejected'
+
+export type UserProfile = {
+  fullName: string
+  headline: string
+  targetRoles: string
+  preferredLocations: string
+  portfolioUrl: string
+  masterResume: string
+  resumeFileName?: string
+  resumeFileUrl?: string
+  updatedAt?: string
+}
+
 export type JobFilters = {
   query: string
   location: string
@@ -45,6 +65,27 @@ export type SavedApplication = {
   role: string
   company: string
   createdAt: string
+  updatedAt?: string
+  status: ApplicationStatus
   jobId?: string
+  job?: Job
   assets: GeneratedAssets
+  notes?: string
+}
+
+export type SavedJob = Job & {
+  savedAt: string
+  status: ApplicationStatus
+  notes?: string
+}
+
+export type ResumeUpload = {
+  fileName: string
+  url: string
+}
+
+export type WorkspaceSnapshot = {
+  profile: UserProfile | null
+  savedJobs: SavedJob[]
+  applications: SavedApplication[]
 }

@@ -5,11 +5,13 @@ A professional job application workspace for searching roles, tailoring a resume
 ## What is included
 
 - React + TypeScript website built with Vite
-- Firebase Hosting configuration
-- Firebase Auth-ready Google sign-in
-- Firestore rules for private per-user application data
+- Firebase Hosting configuration for `applyforge-ai`
+- Google sign-in with Firebase Authentication
+- Firestore profile, saved job, generated application, AI run, and search-history storage
+- Firebase Storage resume uploads under each signed-in user
 - Cloud Functions for AI resume and cover-letter generation
 - Cloud Functions job search aggregation with Remotive plus optional Adzuna and JSearch credentials
+- Local fallback mode while Functions or job-provider keys are not deployed
 - GitHub Actions workflow for Firebase deploys from `main`
 - PowerShell helper for creating/pushing the GitHub repository with `gh`
 
@@ -41,8 +43,9 @@ In Firebase Console:
 2. Add a Web app and copy its config into `.env`.
 3. Enable Authentication and the Google provider.
 4. Create Firestore Database.
-5. Enable Storage if you want to add resume file uploads later.
-6. Set the OpenAI secret:
+5. Enable Storage.
+6. Upgrade to Blaze before deploying Cloud Functions secrets.
+7. Set the OpenAI secret:
 
 ```powershell
 firebase login
@@ -59,6 +62,8 @@ JSEARCH_API_KEY=...
 ```
 
 Remotive works without credentials. Adzuna and JSearch broaden worldwide coverage when keys are provided.
+
+Cloud Functions secrets use Google Secret Manager, which requires the Firebase Blaze plan. Hosting, Auth, Firestore, and Storage can still be used before that upgrade.
 
 ## Deploy
 
