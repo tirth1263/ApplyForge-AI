@@ -358,7 +358,7 @@ function App() {
             <Sparkles size={18} />
           </div>
           <div>
-            <strong>ApplyAtlas AI</strong>
+            <strong>ApplyForge AI</strong>
             <span>Global job application OS</span>
           </div>
         </div>

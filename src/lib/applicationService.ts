@@ -34,9 +34,9 @@ import type {
   UserProfile,
 } from '../types'
 
-const localApplicationsKey = 'applyatlas.applications'
-const localJobsKey = 'applyatlas.savedJobs'
-const localProfileKey = 'applyatlas.profile'
+const localApplicationsKey = 'applyforge.applications'
+const localJobsKey = 'applyforge.savedJobs'
+const localProfileKey = 'applyforge.profile'
 
 type GenerateResponse = GeneratedAssets
 type SearchResponse = { jobs: Job[]; providers: string[] }

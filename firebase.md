@@ -1,4 +1,4 @@
-# Firebase Setup for ApplyAtlas AI
+# Firebase Setup for ApplyForge AI
 
 ## Firebase Project
 
