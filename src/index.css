@@ -1,17 +1,29 @@
-:root {
-  --bg: #f5f6f1;
+:root,
+:root[data-theme='light'],
+:root[data-theme='default'] {
+  --bg: #eef3f1;
+  --bg-elevated: #f8fbfa;
   --surface: #ffffff;
-  --surface-strong: #eef2ec;
-  --ink: #1b241f;
-  --muted: #5d685f;
-  --line: #d9dfd6;
-  --teal: #28645c;
-  --teal-dark: #1f4e48;
-  --teal-soft: #e5f1ee;
-  --gold: #b9762f;
-  --blue: #3d5a80;
-  --rose: #9f4d56;
-  --shadow: 0 18px 45px rgba(43, 54, 47, 0.1);
+  --surface-glass: rgba(255, 255, 255, 0.82);
+  --surface-strong: #e8f0ee;
+  --field: #fbfdfc;
+  --ink: #14211d;
+  --muted: #5b6863;
+  --line: #cbd8d4;
+  --line-strong: #9fb4ad;
+  --teal: #0d6b63;
+  --teal-dark: #084f49;
+  --teal-soft: #dff2ee;
+  --cyan: #1a8792;
+  --gold: #a96f25;
+  --gold-soft: #f2dfc2;
+  --blue: #3d5f86;
+  --rose: #a54858;
+  --panel-glow: rgba(20, 130, 128, 0.16);
+  --shadow: 0 22px 60px rgba(30, 50, 44, 0.13);
+  --grid: rgba(13, 107, 99, 0.08);
+  --scanline: rgba(26, 135, 146, 0.22);
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -21,6 +33,60 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #07110f;
+    --bg-elevated: #0b1715;
+    --surface: #0f1d1a;
+    --surface-glass: rgba(15, 29, 26, 0.82);
+    --surface-strong: #132a26;
+    --field: #0b1715;
+    --ink: #e9f5f1;
+    --muted: #9db2ac;
+    --line: #24423c;
+    --line-strong: #3e6a62;
+    --teal: #36c0ad;
+    --teal-dark: #28a394;
+    --teal-soft: rgba(54, 192, 173, 0.13);
+    --cyan: #63d3e2;
+    --gold: #e0ad62;
+    --gold-soft: rgba(224, 173, 98, 0.15);
+    --blue: #82aee3;
+    --rose: #e18391;
+    --panel-glow: rgba(54, 192, 173, 0.24);
+    --shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+    --grid: rgba(99, 211, 226, 0.08);
+    --scanline: rgba(99, 211, 226, 0.22);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: #07110f;
+  --bg-elevated: #0b1715;
+  --surface: #0f1d1a;
+  --surface-glass: rgba(15, 29, 26, 0.82);
+  --surface-strong: #132a26;
+  --field: #0b1715;
+  --ink: #e9f5f1;
+  --muted: #9db2ac;
+  --line: #24423c;
+  --line-strong: #3e6a62;
+  --teal: #36c0ad;
+  --teal-dark: #28a394;
+  --teal-soft: rgba(54, 192, 173, 0.13);
+  --cyan: #63d3e2;
+  --gold: #e0ad62;
+  --gold-soft: rgba(224, 173, 98, 0.15);
+  --blue: #82aee3;
+  --rose: #e18391;
+  --panel-glow: rgba(54, 192, 173, 0.24);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  --grid: rgba(99, 211, 226, 0.08);
+  --scanline: rgba(99, 211, 226, 0.22);
+  color-scheme: dark;
 }
 
 * {
@@ -36,8 +102,27 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(229, 241, 238, 0.8), rgba(245, 246, 241, 0) 340px),
-    var(--bg);
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(180deg, var(--grid) 1px, transparent 1px),
+    linear-gradient(125deg, rgba(26, 135, 146, 0.16), transparent 36%),
+    linear-gradient(180deg, var(--bg-elevated), var(--bg) 460px);
+  background-size:
+    48px 48px,
+    48px 48px,
+    auto,
+    auto;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(110deg, transparent 0 18%, var(--scanline) 18.2%, transparent 18.5% 100%),
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.08) 45%, transparent);
+  opacity: 0.55;
 }
 
 button,

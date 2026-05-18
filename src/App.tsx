@@ -22,12 +22,15 @@ import {
   Loader2,
   LogOut,
   MapPin,
+  Monitor,
+  Moon,
   PenLine,
   Save,
   Search,
   Send,
   ShieldCheck,
   Sparkles,
+  Sun,
   Target,
   Trash2,
   UserRound,
@@ -95,8 +98,21 @@ const initialForm: ApplicationForm = {
   tone: 'Confident and concise',
 }
 
+type ThemePreference = 'default' | 'light' | 'dark'
+
+const themeOptions: Array<{
+  value: ThemePreference
+  label: string
+  icon: typeof Monitor
+}> = [
+  { value: 'default', label: 'Default', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+]
+
 function App() {
   const [user, setUser] = useState<User | null>(null)
+  const [themePreference, setThemePreference] = useState<ThemePreference>(readThemePreference)
   const [authLoading, setAuthLoading] = useState(Boolean(auth))
   const [profile, setProfile] = useState<UserProfile>(emptyProfile)
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([])
@@ -114,6 +130,11 @@ function App() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [status, setStatus] = useState('Workspace ready')
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themePreference
+    localStorage.setItem('applyforge.theme', themePreference)
+  }, [themePreference])
 
   useEffect(() => {
     if (!auth) return
@@ -387,6 +408,23 @@ function App() {
         </nav>
 
         <div className="sidebar-foot">
+          <div className="theme-switcher" aria-label="Theme preference">
+            {themeOptions.map((option) => {
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.value}
+                  className={themePreference === option.value ? 'active' : ''}
+                  type="button"
+                  onClick={() => setThemePreference(option.value)}
+                  title={`${option.label} theme`}
+                >
+                  <Icon size={15} />
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
           <div className="cloud-card">
             <div>
               <Cloud size={17} />
@@ -1073,6 +1111,14 @@ function formatDate(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'recently'
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date)
+}
+
+function readThemePreference(): ThemePreference {
+  const stored = localStorage.getItem('applyforge.theme')
+  if (stored === 'light' || stored === 'dark' || stored === 'default') {
+    return stored
+  }
+  return 'default'
 }
 
 export default App
