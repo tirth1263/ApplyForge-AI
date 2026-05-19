@@ -80,7 +80,7 @@ const statuses: ApplicationStatus[] = [
 
 const initialFilters: JobFilters = {
   query: '',
-  location: '',
+  location: 'United States',
   workMode: 'any',
   seniority: 'Any level',
   jobType: 'All types',
@@ -612,6 +612,7 @@ function App() {
                     }
                   >
                     <option>All sources</option>
+                    <option>The Muse</option>
                     <option>Remotive</option>
                     <option>Arbeitnow</option>
                   </select>
@@ -679,8 +680,9 @@ function App() {
                         >
                           <Save size={17} />
                         </button>
-                        <a className="icon-button" href={job.url} target="_blank" rel="noreferrer" title="Open job">
+                        <a className="button secondary" href={job.url} target="_blank" rel="noreferrer" title="Open application link">
                           <ExternalLink size={17} />
+                          Apply
                         </a>
                       </div>
                     </article>

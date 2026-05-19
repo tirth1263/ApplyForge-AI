@@ -40,6 +40,68 @@ const localProfileKey = 'applyforge.profile'
 type GenerateResponse = GeneratedAssets
 type SearchResponse = { jobs: Job[]; providers: string[] }
 type ProviderResult = { provider: string; jobs: Job[] }
+type NormalizedLocationFilter = {
+  locationQuery: string
+  aliases: string[]
+  region?: 'us'
+}
+
+const US_STATE_NAMES = [
+  'alabama',
+  'alaska',
+  'arizona',
+  'arkansas',
+  'california',
+  'colorado',
+  'connecticut',
+  'delaware',
+  'district of columbia',
+  'florida',
+  'georgia',
+  'hawaii',
+  'idaho',
+  'illinois',
+  'indiana',
+  'iowa',
+  'kansas',
+  'kentucky',
+  'louisiana',
+  'maine',
+  'maryland',
+  'massachusetts',
+  'michigan',
+  'minnesota',
+  'mississippi',
+  'missouri',
+  'montana',
+  'nebraska',
+  'nevada',
+  'new hampshire',
+  'new jersey',
+  'new mexico',
+  'new york',
+  'north carolina',
+  'north dakota',
+  'ohio',
+  'oklahoma',
+  'oregon',
+  'pennsylvania',
+  'rhode island',
+  'south carolina',
+  'south dakota',
+  'tennessee',
+  'texas',
+  'utah',
+  'vermont',
+  'virginia',
+  'washington',
+  'west virginia',
+  'wisconsin',
+  'wyoming',
+]
+
+const US_STATE_CODE_PATTERN =
+  /(?:^|[\s,;()/.-])(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY)(?:$|[\s,;()/.-])/i
 
 export const emptyProfile: UserProfile = {
   fullName: '',
@@ -309,6 +371,7 @@ export function readLocal<T>(key: string, fallback: T): T {
 
 async function searchPublicJobSources(filters: JobFilters): Promise<SearchResponse> {
   const results = await Promise.allSettled([
+    fetchTheMuseJobs(filters),
     fetchRemotiveJobs(filters),
     fetchArbeitnowJobs(),
   ])
@@ -327,9 +390,73 @@ async function searchPublicJobSources(filters: JobFilters): Promise<SearchRespon
   return {
     jobs: dedupeJobs(jobs)
       .filter((job) => filterRealJob(job, filters))
+      .filter(isEnglishJob)
       .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
-      .slice(0, 250),
+      .slice(0, 300),
     providers,
+  }
+}
+
+async function fetchTheMuseJobs(filters: JobFilters): Promise<ProviderResult> {
+  const pages = [1, 2, 3]
+  const normalizedLocation = normalizeLocationFilter(filters.location)
+
+  const responses = await Promise.all(
+    pages.map(async (page) => {
+      const url = new URL('https://www.themuse.com/api/public/jobs')
+      url.searchParams.set('page', String(page))
+      if (filters.query.trim()) {
+        url.searchParams.set('search', filters.query.trim())
+      }
+      if (normalizedLocation.locationQuery) {
+        url.searchParams.set('location', normalizedLocation.locationQuery)
+      }
+
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`The Muse failed with ${response.status}`)
+      return response.json() as Promise<{
+        results?: Array<{
+          id: number
+          name: string
+          contents?: string
+          publication_date?: string
+          locations?: Array<{ name: string }>
+          categories?: Array<{ name: string }>
+          levels?: Array<{ name: string; short_name?: string }>
+          tags?: Array<{ name?: string } | string>
+          refs?: { landing_page?: string }
+          company?: { name?: string }
+        }>
+      }>
+    }),
+  )
+
+  return {
+    provider: 'The Muse',
+    jobs: responses.flatMap((data) =>
+      (data.results || []).map<Job>((job) => {
+        const description = stripHtml(job.contents || '')
+        const locations = job.locations?.map((location) => location.name).filter(Boolean) || []
+        const levels = job.levels?.map((level) => level.name).filter(Boolean) || []
+        const categories = job.categories?.map((category) => category.name).filter(Boolean) || []
+        const tags =
+          job.tags?.map((tag) => (typeof tag === 'string' ? tag : tag.name || '')).filter(Boolean) ||
+          []
+
+        return {
+          id: `themuse-${job.id}`,
+          title: stripHtml(job.name),
+          company: stripHtml(job.company?.name || 'Company not listed'),
+          location: locations.join(', ') || 'United States',
+          workMode: inferWorkMode(`${job.name} ${locations.join(' ')} ${description}`),
+          source: 'The Muse',
+          url: job.refs?.landing_page || `https://www.themuse.com/jobs/${job.id}`,
+          description: description.slice(0, 760),
+          postedAt: job.publication_date,
+          tags: [...categories, ...levels, ...tags].slice(0, 7),
+        }
+      }),
+    ),
   }
 }
 
@@ -420,7 +547,7 @@ async function fetchArbeitnowJobs(): Promise<ProviderResult> {
 
 function filterRealJob(job: Job, filters: JobFilters) {
   const normalizedQuery = filters.query.trim().toLowerCase()
-  const normalizedLocation = filters.location.trim().toLowerCase()
+  const normalizedLocation = normalizeLocationFilter(filters.location)
   const normalizedType = filters.jobType.trim().toLowerCase()
   const normalizedSource = filters.source.trim().toLowerCase()
 
@@ -434,10 +561,7 @@ function filterRealJob(job: Job, filters: JobFilters) {
     return false
   }
 
-  if (normalizedLocation && normalizedLocation !== 'remote') {
-    const locationHaystack = `${job.location} ${job.description}`.toLowerCase()
-    if (!locationHaystack.includes(normalizedLocation)) return false
-  }
+  if (!matchesLocationFilter(job, normalizedLocation)) return false
 
   if (normalizedType && normalizedType !== 'all types') {
     const typeHaystack = `${job.tags.join(' ')} ${job.description}`.toLowerCase()
@@ -453,6 +577,101 @@ function filterRealJob(job: Job, filters: JobFilters) {
   }
 
   return true
+}
+
+function normalizeLocationFilter(location: string): NormalizedLocationFilter {
+  const normalized = location.trim().toLowerCase()
+  if (!normalized) {
+    return { locationQuery: '', aliases: [] as string[] }
+  }
+
+  const usAliases = [
+    'united states',
+    'united states of america',
+    'usa',
+    'u.s.',
+    'us',
+    'america',
+  ]
+
+  if (usAliases.includes(normalized)) {
+    return {
+      locationQuery: 'United States',
+      region: 'us',
+      aliases: [
+        'united states',
+        'united states of america',
+        'usa',
+        'u.s.',
+        'us only',
+        'north america',
+        'americas',
+        'america',
+        'worldwide',
+        'global',
+        'remote',
+        'flexible / remote',
+      ],
+    }
+  }
+
+  if (normalized === 'remote') {
+    return {
+      locationQuery: 'Remote',
+      aliases: ['remote', 'worldwide', 'global', 'anywhere'],
+    }
+  }
+
+  return {
+    locationQuery: location.trim(),
+    aliases: [normalized],
+  }
+}
+
+function matchesLocationFilter(job: Job, normalizedLocation: NormalizedLocationFilter) {
+  if (!normalizedLocation.locationQuery || normalizedLocation.locationQuery.toLowerCase() === 'remote') {
+    return true
+  }
+
+  const locationHaystack = `${job.location} ${job.description}`.toLowerCase()
+  if (normalizedLocation.aliases.some((alias) => locationHaystack.includes(alias))) return true
+
+  if (normalizedLocation.region === 'us') {
+    const listedLocation = job.location.toLowerCase()
+    return US_STATE_NAMES.some((state) => listedLocation.includes(state)) || US_STATE_CODE_PATTERN.test(job.location)
+  }
+
+  return false
+}
+
+function isEnglishJob(job: Job) {
+  const text = `${job.title} ${job.description} ${job.tags.join(' ')}`.replace(/\s+/g, ' ').trim()
+  if (!text) return false
+
+  const sample = text.slice(0, 1200)
+  const letters = sample.match(/[A-Za-z]/g)?.length || 0
+  const nonAscii = countNonAscii(sample)
+  const commonEnglishWords =
+    sample
+      .toLowerCase()
+      .match(/\b(the|and|for|with|you|your|our|team|role|work|experience|skills|will|are|to|of|in)\b/g)
+      ?.length || 0
+  const foreignMarkers =
+    sample
+      .toLowerCase()
+      .match(
+        /\b(und|oder|nicht|deine|aufgaben|bewerbung|für|mit|eine|einen|des|der|die|das|unser|unsere|vous|nous|avec|pour|dans|les|des|el|la|los|para|con|por)\b/g,
+      )?.length || 0
+
+  return letters > 80 && nonAscii / Math.max(sample.length, 1) < 0.08 && commonEnglishWords >= 4 && foreignMarkers <= 3
+}
+
+function countNonAscii(value: string) {
+  let count = 0
+  for (const char of value) {
+    if (char.charCodeAt(0) > 127) count += 1
+  }
+  return count
 }
 
 function dedupeJobs(jobs: Job[]) {
