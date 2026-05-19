@@ -59,3 +59,28 @@ export async function signOutOfGoogle() {
   if (!auth) return
   return signOut(auth)
 }
+
+export function getAuthErrorMessage(error: unknown) {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : ''
+
+  if (code === 'auth/configuration-not-found') {
+    return [
+      'Firebase Auth is not initialized for project applyforge-ai.',
+      'Open Firebase Console > Authentication, click Get started, enable Google sign-in, and confirm applyforge-ai.web.app is an authorized domain.',
+    ].join(' ')
+  }
+
+  if (code === 'auth/unauthorized-domain') {
+    return 'This domain is not authorized in Firebase Auth. Add applyforge-ai.web.app under Authentication > Settings > Authorized domains.'
+  }
+
+  if (code === 'auth/popup-blocked') {
+    return 'The browser blocked the Google sign-in popup. Allow popups for this site and try again.'
+  }
+
+  if (error instanceof Error) return error.message
+  return 'Google sign-in failed. Check Firebase Authentication settings for applyforge-ai.'
+}

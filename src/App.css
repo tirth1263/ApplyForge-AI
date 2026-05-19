@@ -136,6 +136,10 @@
   box-shadow: inset 0 0 0 1px var(--panel-glow);
 }
 
+.dashboard-theme {
+  width: min(330px, 100%);
+}
+
 .cloud-card {
   display: grid;
   gap: 10px;
@@ -185,6 +189,12 @@ progress::-webkit-progress-value {
   border-bottom: 1px solid var(--line);
 }
 
+.topbar-intro {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
 .eyebrow {
   display: inline-flex;
   align-items: center;
@@ -229,6 +239,40 @@ h3 {
   justify-content: flex-end;
   gap: 10px;
   min-width: 340px;
+}
+
+.auth-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  margin: -4px 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(224, 173, 98, 0.52);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--gold-soft);
+}
+
+.auth-alert svg {
+  color: var(--gold);
+  margin-top: 2px;
+}
+
+.auth-alert div {
+  display: grid;
+  gap: 4px;
+}
+
+.auth-alert p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.auth-alert a {
+  width: fit-content;
+  color: var(--teal);
+  font-weight: 800;
+  text-decoration: none;
 }
 
 .status-pill {
@@ -401,7 +445,7 @@ h3 {
 
 .filters {
   display: grid;
-  grid-template-columns: 1.5fr 1.25fr 0.85fr 0.9fr 0.88fr 0.82fr;
+  grid-template-columns: 1.35fr 1.12fr 0.74fr 0.82fr 0.8fr 0.8fr 0.72fr;
   gap: 10px;
 }
 

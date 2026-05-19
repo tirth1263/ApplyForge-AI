@@ -39,6 +39,7 @@ import './App.css'
 import {
   auth,
   firebaseConfigIsComplete,
+  getAuthErrorMessage,
   signInWithGoogle,
   signOutOfGoogle,
 } from './lib/firebase'
@@ -57,7 +58,6 @@ import {
   updateSavedJobStatus,
   uploadResumeFile,
 } from './lib/applicationService'
-import { mockJobs } from './data/mockJobs'
 import type {
   ApplicationForm,
   ApplicationStatus,
@@ -79,22 +79,21 @@ const statuses: ApplicationStatus[] = [
 ]
 
 const initialFilters: JobFilters = {
-  query: 'AI product manager',
-  location: 'Remote',
+  query: '',
+  location: '',
   workMode: 'any',
   seniority: 'Any level',
-  jobType: 'Full-time',
+  jobType: 'All types',
   source: 'All sources',
-  postedWithinDays: 30,
+  postedWithinDays: 90,
   minSalary: 0,
 }
 
 const initialForm: ApplicationForm = {
-  role: 'AI Product Manager',
-  company: 'Northstar Systems',
+  role: '',
+  company: '',
   resume: '',
-  jobDescription:
-    'Own AI roadmap, translate customer needs into product requirements, partner with engineering and growth, and launch responsible AI features for enterprise teams.',
+  jobDescription: '',
   tone: 'Confident and concise',
 }
 
@@ -118,9 +117,9 @@ function App() {
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([])
   const [applications, setApplications] = useState<SavedApplication[]>([])
   const [filters, setFilters] = useState<JobFilters>(initialFilters)
-  const [jobs, setJobs] = useState<Job[]>(mockJobs)
-  const [providers, setProviders] = useState<string[]>(['Local demo feed'])
-  const [selectedJob, setSelectedJob] = useState<Job | null>(mockJobs[0])
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [providers, setProviders] = useState<string[]>([])
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null)
   const [form, setForm] = useState<ApplicationForm>(initialForm)
   const [generated, setGenerated] = useState<GeneratedAssets | null>(null)
   const [activeOutput, setActiveOutput] = useState<'resume' | 'letter' | 'notes'>('resume')
@@ -130,6 +129,7 @@ function App() {
   const [profileSaving, setProfileSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [status, setStatus] = useState('Workspace ready')
+  const [authIssue, setAuthIssue] = useState('')
 
   useEffect(() => {
     document.documentElement.dataset.theme = themePreference
@@ -137,11 +137,39 @@ function App() {
   }, [themePreference])
 
   useEffect(() => {
+    let active = true
+
+    async function loadInitialJobs() {
+      setSearching(true)
+      setStatus('Loading real open roles')
+      try {
+        const response = await searchJobs(initialFilters)
+        if (!active) return
+        setJobs(response.jobs)
+        setProviders(response.providers)
+        setSelectedJob(response.jobs[0] ?? null)
+        setStatus(`${response.jobs.length} real roles loaded`)
+      } catch (error) {
+        if (!active) return
+        setStatus(error instanceof Error ? error.message : 'Job search failed')
+      } finally {
+        if (active) setSearching(false)
+      }
+    }
+
+    void loadInitialJobs()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (!auth) return
 
     return onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser)
       setAuthLoading(false)
+      if (nextUser) setAuthIssue('')
       setStatus(nextUser ? 'Google sign-in active' : 'Signed out')
     })
   }, [])
@@ -208,7 +236,7 @@ function App() {
       Boolean(user),
       Boolean(profile.masterResume || profile.resumeFileUrl),
       applications.length > 0,
-      providers.some((provider) => provider !== 'Local demo feed'),
+      providers.length > 0,
     ]
     return Math.round((checks.filter(Boolean).length / checks.length) * 100)
   }, [applications.length, profile.masterResume, profile.resumeFileUrl, providers, user])
@@ -217,8 +245,11 @@ function App() {
     try {
       setStatus('Opening Google sign-in')
       await signInWithGoogle()
+      setAuthIssue('')
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Sign-in failed')
+      const message = getAuthErrorMessage(error)
+      setAuthIssue(message)
+      setStatus('Google sign-in needs Firebase Auth setup')
     }
   }
 
@@ -408,23 +439,6 @@ function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <div className="theme-switcher" aria-label="Theme preference">
-            {themeOptions.map((option) => {
-              const Icon = option.icon
-              return (
-                <button
-                  key={option.value}
-                  className={themePreference === option.value ? 'active' : ''}
-                  type="button"
-                  onClick={() => setThemePreference(option.value)}
-                  title={`${option.label} theme`}
-                >
-                  <Icon size={15} />
-                  {option.label}
-                </button>
-              )
-            })}
-          </div>
           <div className="cloud-card">
             <div>
               <Cloud size={17} />
@@ -439,7 +453,24 @@ function App() {
 
       <main className="workspace" id="dashboard">
         <header className="topbar">
-          <div>
+          <div className="topbar-intro">
+            <div className="theme-switcher dashboard-theme" aria-label="Theme preference">
+              {themeOptions.map((option) => {
+                const Icon = option.icon
+                return (
+                  <button
+                    key={option.value}
+                    className={themePreference === option.value ? 'active' : ''}
+                    type="button"
+                    onClick={() => setThemePreference(option.value)}
+                    title={`${option.label} theme`}
+                  >
+                    <Icon size={15} />
+                    {option.label}
+                  </button>
+                )
+              })}
+            </div>
             <span className="eyebrow">ApplyForge Firebase project</span>
             <h1>Search global roles, tailor every application, and track the full pipeline.</h1>
           </div>
@@ -463,6 +494,23 @@ function App() {
             )}
           </div>
         </header>
+
+        {authIssue && (
+          <section className="auth-alert" aria-live="polite">
+            <ShieldCheck size={18} />
+            <div>
+              <strong>Google sign-in setup needed</strong>
+              <p>{authIssue}</p>
+              <a
+                href="https://console.firebase.google.com/project/applyforge-ai/authentication/providers"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Firebase Authentication
+              </a>
+            </div>
+          </section>
+        )}
 
         <section className="metric-grid" aria-label="Workspace metrics">
           {metrics.map((metric) => {
@@ -549,10 +597,23 @@ function App() {
                       setFilters((current) => ({ ...current, jobType: event.target.value }))
                     }
                   >
+                    <option>All types</option>
                     <option>Full-time</option>
                     <option>Contract</option>
                     <option>Part-time</option>
                     <option>Internship</option>
+                  </select>
+                </FieldIcon>
+                <FieldIcon icon={<Database size={16} />}>
+                  <select
+                    value={filters.source}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, source: event.target.value }))
+                    }
+                  >
+                    <option>All sources</option>
+                    <option>Remotive</option>
+                    <option>Arbeitnow</option>
                   </select>
                 </FieldIcon>
                 <FieldIcon icon={<CalendarClock size={16} />}>
@@ -574,8 +635,9 @@ function App() {
               </div>
 
               <div className="provider-line">
+                <span>Real public job listings only</span>
                 {providers.map((provider) => (
-                  <span key={provider}>{provider}</span>
+                  <span key={provider}>Source: {provider}</span>
                 ))}
               </div>
 
@@ -979,7 +1041,7 @@ function App() {
                   label="AI package saved"
                 />
                 <ReadinessItem
-                  done={providers.some((provider) => provider !== 'Local demo feed')}
+                  done={providers.length > 0}
                   icon={<Globe2 size={14} />}
                   label="Live job provider"
                 />

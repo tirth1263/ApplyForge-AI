@@ -41,6 +41,22 @@ The Firebase CLI project is stored in `.firebaserc`.
 5. Add authorized domains for local and production hosting.
 6. Upgrade to Blaze before deploying Cloud Functions secrets.
 
+## Google Sign-In Troubleshooting
+
+If the app shows `auth/configuration-not-found`, Firebase Auth is not initialized for the `applyforge-ai` project yet.
+
+1. Open [Firebase Authentication providers](https://console.firebase.google.com/project/applyforge-ai/authentication/providers).
+2. Click **Get started** if Firebase asks you to initialize Authentication.
+3. Enable **Google** as a sign-in provider.
+4. Open **Authentication > Settings > Authorized domains**.
+5. Confirm these domains are present:
+
+```text
+applyforge-ai.firebaseapp.com
+applyforge-ai.web.app
+localhost
+```
+
 ## Cloud Functions Secrets
 
 Set the OpenAI API key as a Firebase Functions secret.

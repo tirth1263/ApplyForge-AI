@@ -21,7 +21,6 @@ import {
   type UploadTaskSnapshot,
 } from 'firebase/storage'
 import { db, functions, storage } from './firebase'
-import { mockJobs } from '../data/mockJobs'
 import type {
   ApplicationForm,
   ApplicationStatus,
@@ -40,6 +39,7 @@ const localProfileKey = 'applyforge.profile'
 
 type GenerateResponse = GeneratedAssets
 type SearchResponse = { jobs: Job[]; providers: string[] }
+type ProviderResult = { provider: string; jobs: Job[] }
 
 export const emptyProfile: UserProfile = {
   fullName: '',
@@ -165,6 +165,11 @@ export async function generateApplicationAssets(
 }
 
 export async function searchJobs(filters: JobFilters): Promise<SearchResponse> {
+  const realJobs = await searchPublicJobSources(filters)
+  if (realJobs.jobs.length) {
+    return realJobs
+  }
+
   if (functions) {
     try {
       const search = httpsCallable<JobFilters, SearchResponse>(functions, 'searchJobs')
@@ -175,7 +180,7 @@ export async function searchJobs(filters: JobFilters): Promise<SearchResponse> {
     }
   }
 
-  return searchLocalJobs(filters)
+  return { jobs: [], providers: ['No real jobs returned from connected sources'] }
 }
 
 export async function saveApplication(
@@ -302,24 +307,182 @@ export function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
-function searchLocalJobs(filters: JobFilters): SearchResponse {
-  const normalizedQuery = filters.query.trim().toLowerCase()
-  const normalizedLocation = filters.location.trim().toLowerCase()
+async function searchPublicJobSources(filters: JobFilters): Promise<SearchResponse> {
+  const results = await Promise.allSettled([
+    fetchRemotiveJobs(filters),
+    fetchArbeitnowJobs(),
+  ])
 
-  const jobs = mockJobs.filter((job) => {
-    const haystack = `${job.title} ${job.company} ${job.description} ${job.tags.join(' ')}`
-      .toLowerCase()
-      .trim()
-    const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery)
-    const matchesLocation =
-      !normalizedLocation ||
-      normalizedLocation === 'remote' ||
-      job.location.toLowerCase().includes(normalizedLocation)
-    const matchesMode = filters.workMode === 'any' || job.workMode === filters.workMode
-    return matchesQuery && matchesLocation && matchesMode
+  const providers: string[] = []
+  const jobs = results.flatMap((result) => {
+    if (result.status === 'rejected') {
+      console.warn('Real job provider failed', result.reason)
+      return []
+    }
+
+    if (result.value.jobs.length) providers.push(result.value.provider)
+    return result.value.jobs
   })
 
-  return { jobs, providers: ['Local demo feed'] }
+  return {
+    jobs: dedupeJobs(jobs)
+      .filter((job) => filterRealJob(job, filters))
+      .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
+      .slice(0, 250),
+    providers,
+  }
+}
+
+async function fetchRemotiveJobs(filters: JobFilters): Promise<ProviderResult> {
+  const url = new URL('https://remotive.com/api/remote-jobs')
+  url.searchParams.set('limit', '120')
+  if (filters.query.trim()) {
+    url.searchParams.set('search', filters.query.trim())
+  }
+
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`Remotive failed with ${response.status}`)
+
+  const data = (await response.json()) as {
+    jobs?: Array<{
+      id: number
+      url: string
+      title: string
+      company_name: string
+      category?: string
+      tags?: string[]
+      job_type?: string
+      publication_date?: string
+      candidate_required_location?: string
+      salary?: string
+      description?: string
+    }>
+  }
+
+  return {
+    provider: 'Remotive',
+    jobs:
+      data.jobs?.map<Job>((job) => ({
+        id: `remotive-${job.id}`,
+        title: stripHtml(job.title),
+        company: stripHtml(job.company_name),
+        location: job.candidate_required_location || 'Remote',
+        workMode: 'remote',
+        source: 'Remotive',
+        url: job.url,
+        description: stripHtml(job.description || '').slice(0, 760),
+        salary: job.salary || undefined,
+        postedAt: job.publication_date,
+        tags: [job.category, job.job_type, ...(job.tags || [])].filter(Boolean).slice(0, 7) as string[],
+      })) || [],
+  }
+}
+
+async function fetchArbeitnowJobs(): Promise<ProviderResult> {
+  const response = await fetch('https://www.arbeitnow.com/api/job-board-api')
+  if (!response.ok) throw new Error(`Arbeitnow failed with ${response.status}`)
+
+  const data = (await response.json()) as {
+    data?: Array<{
+      slug: string
+      company_name: string
+      title: string
+      description?: string
+      remote?: boolean
+      url: string
+      tags?: string[]
+      job_types?: string[]
+      location?: string
+      created_at?: number
+    }>
+  }
+
+  return {
+    provider: 'Arbeitnow',
+    jobs:
+      data.data?.map<Job>((job) => {
+        const description = stripHtml(job.description || '')
+        return {
+          id: `arbeitnow-${job.slug}`,
+          title: stripHtml(job.title),
+          company: stripHtml(job.company_name),
+          location: job.location || (job.remote ? 'Remote' : 'Europe'),
+          workMode: job.remote ? 'remote' : inferWorkMode(`${job.location} ${description}`),
+          source: 'Arbeitnow',
+          url: job.url,
+          description: description.slice(0, 760),
+          postedAt: job.created_at ? new Date(job.created_at * 1000).toISOString() : undefined,
+          tags: [...(job.job_types || []), ...(job.tags || [])].filter(Boolean).slice(0, 7),
+        }
+      }) || [],
+  }
+}
+
+function filterRealJob(job: Job, filters: JobFilters) {
+  const normalizedQuery = filters.query.trim().toLowerCase()
+  const normalizedLocation = filters.location.trim().toLowerCase()
+  const normalizedType = filters.jobType.trim().toLowerCase()
+  const normalizedSource = filters.source.trim().toLowerCase()
+
+  const haystack = `${job.title} ${job.company} ${job.description} ${job.tags.join(' ')}`
+    .toLowerCase()
+    .trim()
+
+  if (normalizedQuery && !haystack.includes(normalizedQuery)) return false
+  if (filters.workMode !== 'any' && job.workMode !== filters.workMode) return false
+  if (normalizedSource !== 'all sources' && job.source.toLowerCase() !== normalizedSource) {
+    return false
+  }
+
+  if (normalizedLocation && normalizedLocation !== 'remote') {
+    const locationHaystack = `${job.location} ${job.description}`.toLowerCase()
+    if (!locationHaystack.includes(normalizedLocation)) return false
+  }
+
+  if (normalizedType && normalizedType !== 'all types') {
+    const typeHaystack = `${job.tags.join(' ')} ${job.description}`.toLowerCase()
+    if (!typeHaystack.includes(normalizedType.replace('-', '_')) && !typeHaystack.includes(normalizedType)) {
+      return false
+    }
+  }
+
+  const postedAt = job.postedAt ? Date.parse(job.postedAt) : 0
+  if (postedAt) {
+    const ageDays = (Date.now() - postedAt) / 86_400_000
+    if (ageDays > filters.postedWithinDays) return false
+  }
+
+  return true
+}
+
+function dedupeJobs(jobs: Job[]) {
+  const seen = new Set<string>()
+  return jobs.filter((job) => {
+    const key = `${job.title}-${job.company}-${job.location}`.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x26;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function inferWorkMode(text: string): Job['workMode'] {
+  const normalized = text.toLowerCase()
+  if (normalized.includes('hybrid')) return 'hybrid'
+  if (normalized.includes('remote')) return 'remote'
+  return 'onsite'
 }
 
 function buildLocalAssets(form: ApplicationForm): GeneratedAssets {
