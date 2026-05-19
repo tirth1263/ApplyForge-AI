@@ -29,6 +29,7 @@ import {
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   Target,
@@ -223,11 +224,11 @@ function App() {
   const metrics = useMemo(
     () => [
       { label: 'Open roles', value: jobs.length, icon: BriefcaseBusiness },
+      { label: 'Major boards', value: 3, icon: SlidersHorizontal },
       { label: 'Saved jobs', value: savedJobs.length, icon: Save },
       { label: 'Applications', value: applications.length, icon: ClipboardList },
-      { label: 'Interviews', value: statusCounts.Interview, icon: CalendarClock },
     ],
-    [applications.length, jobs.length, savedJobs.length, statusCounts.Interview],
+    [applications.length, jobs.length, savedJobs.length],
   )
 
   const setupCompletion = useMemo(() => {
@@ -240,6 +241,8 @@ function App() {
     ]
     return Math.round((checks.filter(Boolean).length / checks.length) * 100)
   }, [applications.length, profile.masterResume, profile.resumeFileUrl, providers, user])
+
+  const externalBoards = useMemo(() => buildExternalJobBoards(filters), [filters])
 
   async function handleSignIn() {
     try {
@@ -602,6 +605,9 @@ function App() {
                     <option>Contract</option>
                     <option>Part-time</option>
                     <option>Internship</option>
+                    <option>Freelance</option>
+                    <option>Temporary</option>
+                    <option>Volunteer</option>
                   </select>
                 </FieldIcon>
                 <FieldIcon icon={<Database size={16} />}>
@@ -642,6 +648,22 @@ function App() {
                 ))}
               </div>
 
+              <div className="board-grid" aria-label="Major job board routes">
+                {externalBoards.map((board) => (
+                  <a key={board.name} className="board-card" href={board.url} target="_blank" rel="noreferrer">
+                    <div>
+                      <strong>{board.name}</strong>
+                      <span>{board.signal}</span>
+                    </div>
+                    <p>{board.detail}</p>
+                    <span className="board-action">
+                      Open search
+                      <ExternalLink size={14} />
+                    </span>
+                  </a>
+                ))}
+              </div>
+
               <div className="job-list">
                 {jobs.length ? (
                   jobs.map((job) => (
@@ -656,7 +678,7 @@ function App() {
                         </div>
                         <p className="company-line">
                           <Building2 size={15} />
-                          {job.company} · {job.location}
+                          {job.company} - {job.location}
                         </p>
                         <p>{job.description}</p>
                         <div className="tag-row">
@@ -880,7 +902,7 @@ function App() {
                           <button type="button" onClick={() => loadApplication(application)}>
                             <strong>{application.role}</strong>
                             <span>
-                              {application.company} · {formatDate(application.createdAt)}
+                              {application.company} - {formatDate(application.createdAt)}
                             </span>
                           </button>
                           <select
@@ -1018,7 +1040,7 @@ function App() {
                   >
                     <div>
                       <strong>{company.name}</strong>
-                      <span>{company.locations.slice(0, 2).join(' · ')}</span>
+                      <span>{company.locations.slice(0, 2).join(' - ')}</span>
                     </div>
                     <span>{company.count}</span>
                     <ChevronRight size={16} />
@@ -1156,6 +1178,96 @@ function buildCompanySignals(jobs: Job[]) {
   return Object.values(signals)
     .sort((a, b) => b.count - a.count)
     .slice(0, 6)
+}
+
+function buildExternalJobBoards(filters: JobFilters) {
+  const query = filters.query.trim()
+  const location = filters.location.trim() || 'United States'
+
+  return [
+    {
+      name: 'Simplify',
+      signal: 'Curated jobs',
+      detail: 'Internships, new-grad roles, experienced roles, and saved application workflow.',
+      url: buildSimplifyUrl(query, location),
+    },
+    {
+      name: 'JobRight',
+      signal: 'AI matches',
+      detail: 'Role relevance, resume alignment, and referral discovery for active job searches.',
+      url: buildJobRightUrl(query, location, filters.workMode),
+    },
+    {
+      name: 'LinkedIn Jobs',
+      signal: 'Network reach',
+      detail: 'Broad company coverage with date, location, experience, and employment filters.',
+      url: buildLinkedInJobsUrl(filters),
+    },
+  ]
+}
+
+function buildSimplifyUrl(query: string, location: string) {
+  const url = new URL('https://simplify.jobs/jobs')
+  if (query) url.searchParams.set('query', query)
+  if (location) url.searchParams.set('location', location)
+  return url.toString()
+}
+
+function buildJobRightUrl(query: string, location: string, workMode: JobFilters['workMode']) {
+  const url = new URL('https://jobright.ai/')
+  if (query) url.searchParams.set('jobTitle', query)
+  if (location) url.searchParams.set('country', location)
+  if (workMode !== 'any') url.searchParams.set('workModel', workMode)
+  return url.toString()
+}
+
+function buildLinkedInJobsUrl(filters: JobFilters) {
+  const url = new URL('https://www.linkedin.com/jobs/search/')
+  const query = filters.query.trim()
+  const location = filters.location.trim() || 'United States'
+  if (query) url.searchParams.set('keywords', query)
+  url.searchParams.set('location', location)
+  url.searchParams.set('sortBy', 'DD')
+  url.searchParams.set('f_TPR', `r${Math.max(1, filters.postedWithinDays) * 86400}`)
+
+  const workType = linkedInWorkType(filters.workMode)
+  if (workType) url.searchParams.set('f_WT', workType)
+
+  const jobType = linkedInJobType(filters.jobType)
+  if (jobType) url.searchParams.set('f_JT', jobType)
+
+  const experience = linkedInExperience(filters.seniority)
+  if (experience) url.searchParams.set('f_E', experience)
+
+  return url.toString()
+}
+
+function linkedInWorkType(workMode: JobFilters['workMode']) {
+  if (workMode === 'onsite') return '1'
+  if (workMode === 'remote') return '2'
+  if (workMode === 'hybrid') return '3'
+  return ''
+}
+
+function linkedInJobType(jobType: string) {
+  const normalized = jobType.toLowerCase()
+  if (normalized === 'full-time') return 'F'
+  if (normalized === 'part-time') return 'P'
+  if (normalized === 'contract') return 'C'
+  if (normalized === 'temporary') return 'T'
+  if (normalized === 'internship') return 'I'
+  if (normalized === 'volunteer') return 'V'
+  return ''
+}
+
+function linkedInExperience(seniority: string) {
+  const normalized = seniority.toLowerCase()
+  if (normalized === 'entry') return '2'
+  if (normalized === 'mid-level') return '3,4'
+  if (normalized === 'senior') return '4'
+  if (normalized === 'lead') return '5'
+  if (normalized === 'executive') return '6'
+  return ''
 }
 
 async function readResumeText(file: File) {

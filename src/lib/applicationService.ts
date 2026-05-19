@@ -392,13 +392,13 @@ async function searchPublicJobSources(filters: JobFilters): Promise<SearchRespon
       .filter((job) => filterRealJob(job, filters))
       .filter(isEnglishJob)
       .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
-      .slice(0, 300),
+      .slice(0, 500),
     providers,
   }
 }
 
 async function fetchTheMuseJobs(filters: JobFilters): Promise<ProviderResult> {
-  const pages = [1, 2, 3]
+  const pages = Array.from({ length: 8 }, (_, index) => index + 1)
   const normalizedLocation = normalizeLocationFilter(filters.location)
 
   const responses = await Promise.all(
@@ -548,7 +548,6 @@ async function fetchArbeitnowJobs(): Promise<ProviderResult> {
 function filterRealJob(job: Job, filters: JobFilters) {
   const normalizedQuery = filters.query.trim().toLowerCase()
   const normalizedLocation = normalizeLocationFilter(filters.location)
-  const normalizedType = filters.jobType.trim().toLowerCase()
   const normalizedSource = filters.source.trim().toLowerCase()
 
   const haystack = `${job.title} ${job.company} ${job.description} ${job.tags.join(' ')}`
@@ -562,13 +561,8 @@ function filterRealJob(job: Job, filters: JobFilters) {
   }
 
   if (!matchesLocationFilter(job, normalizedLocation)) return false
-
-  if (normalizedType && normalizedType !== 'all types') {
-    const typeHaystack = `${job.tags.join(' ')} ${job.description}`.toLowerCase()
-    if (!typeHaystack.includes(normalizedType.replace('-', '_')) && !typeHaystack.includes(normalizedType)) {
-      return false
-    }
-  }
+  if (!matchesSeniorityFilter(job, filters.seniority)) return false
+  if (!matchesJobTypeFilter(job, filters.jobType)) return false
 
   const postedAt = job.postedAt ? Date.parse(job.postedAt) : 0
   if (postedAt) {
@@ -644,6 +638,44 @@ function matchesLocationFilter(job: Job, normalizedLocation: NormalizedLocationF
   return false
 }
 
+function matchesSeniorityFilter(job: Job, seniority: string) {
+  const normalized = seniority.trim().toLowerCase()
+  if (!normalized || normalized === 'any level') return true
+
+  const aliases: Record<string, string[]> = {
+    entry: ['entry', 'junior', 'new grad', 'new graduate', 'graduate', 'early career', 'associate'],
+    'mid-level': ['mid-level', 'mid level', 'intermediate', 'experienced', 'associate'],
+    senior: ['senior', 'sr.', 'sr ', 'staff', 'principal'],
+    lead: ['lead', 'manager', 'head of', 'principal'],
+    executive: ['executive', 'director', 'vp', 'vice president', 'chief', 'cxo'],
+  }
+  const terms = aliases[normalized] || [normalized]
+  const haystack = normalizeSearchText(`${job.title} ${job.description} ${job.tags.join(' ')}`)
+  return terms.some((term) => haystack.includes(normalizeSearchText(term)))
+}
+
+function matchesJobTypeFilter(job: Job, jobType: string) {
+  const normalized = jobType.trim().toLowerCase()
+  if (!normalized || normalized === 'all types') return true
+
+  const aliases: Record<string, string[]> = {
+    'full-time': ['full-time', 'full time', 'full_time', 'permanent', 'regular'],
+    contract: ['contract', 'contractor', 'fixed term', 'fixed-term'],
+    'part-time': ['part-time', 'part time', 'part_time'],
+    internship: ['internship', 'intern', 'co-op', 'coop'],
+    freelance: ['freelance', 'freelancer'],
+    temporary: ['temporary', 'temp', 'seasonal'],
+    volunteer: ['volunteer', 'volunteering'],
+  }
+  const terms = aliases[normalized] || [normalized]
+  const haystack = normalizeSearchText(`${job.title} ${job.description} ${job.tags.join(' ')}`)
+  return terms.some((term) => haystack.includes(normalizeSearchText(term)))
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[_/-]+/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
 function isEnglishJob(job: Job) {
   const text = `${job.title} ${job.description} ${job.tags.join(' ')}`.replace(/\s+/g, ' ').trim()
   if (!text) return false
@@ -660,7 +692,7 @@ function isEnglishJob(job: Job) {
     sample
       .toLowerCase()
       .match(
-        /\b(und|oder|nicht|deine|aufgaben|bewerbung|für|mit|eine|einen|des|der|die|das|unser|unsere|vous|nous|avec|pour|dans|les|des|el|la|los|para|con|por)\b/g,
+        /\b(und|oder|nicht|deine|aufgaben|bewerbung|fur|mit|eine|einen|des|der|die|das|unser|unsere|vous|nous|avec|pour|dans|les|des|el|la|los|para|con|por)\b/g,
       )?.length || 0
 
   return letters > 80 && nonAscii / Math.max(sample.length, 1) < 0.08 && commonEnglishWords >= 4 && foreignMarkers <= 3

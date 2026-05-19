@@ -523,6 +523,66 @@ textarea:focus {
   background: var(--surface-strong);
 }
 
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.board-card {
+  display: grid;
+  gap: 10px;
+  min-height: 142px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: inherit;
+  background:
+    linear-gradient(135deg, var(--surface-glass), var(--surface-strong)),
+    var(--surface);
+  text-decoration: none;
+}
+
+.board-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--panel-glow);
+}
+
+.board-card div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.board-card strong {
+  font-size: 15px;
+}
+
+.board-card div span,
+.board-card p {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.board-card p {
+  line-height: 1.45;
+}
+
+.board-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 28px;
+  margin-top: auto;
+  padding: 0 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--teal), var(--cyan));
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .job-list {
   display: grid;
   gap: 10px;
@@ -882,6 +942,7 @@ pre {
 
   .metric-grid,
   .filters,
+  .board-grid,
   .studio-grid,
   .tracker-grid,
   .status-grid {
