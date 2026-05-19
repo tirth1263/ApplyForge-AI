@@ -131,13 +131,13 @@ export function subscribeToSavedJobs(
   onChange: (jobs: SavedJob[]) => void,
 ) {
   if (!userId || !db) {
-    onChange(readLocal<SavedJob[]>(localJobsKey, []))
+    onChange(readLocal<SavedJob[]>(localJobsKey, []).filter(isAllowedUsEnglishJob))
     return () => undefined
   }
 
   return onSnapshot(
     query(collection(db, 'users', userId, 'savedJobs'), orderBy('savedAt', 'desc')),
-    (snapshot) => onChange(snapshot.docs.map(normalizeSavedJob)),
+    (snapshot) => onChange(snapshot.docs.map(normalizeSavedJob).filter(isAllowedUsEnglishJob)),
   )
 }
 
@@ -357,6 +357,10 @@ export function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
+export function isAllowedUsEnglishJob(job: Job) {
+  return matchesLocationFilter(job, normalizeLocationFilter('United States')) && isEnglishJob(job)
+}
+
 async function searchPublicJobSources(filters: JobFilters): Promise<SearchResponse> {
   const results = await Promise.allSettled([
     fetchTheMuseJobs(filters),
@@ -374,7 +378,7 @@ async function searchPublicJobSources(filters: JobFilters): Promise<SearchRespon
 
   const filteredJobs = dedupeJobs(jobs)
     .filter((job) => filterRealJob(job, filters))
-    .filter(isEnglishJob)
+    .filter(isAllowedUsEnglishJob)
     .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
     .slice(0, 500)
   const providers = Array.from(new Set(filteredJobs.map((job) => job.source)))
@@ -425,6 +429,10 @@ async function fetchTheMuseJobs(filters: JobFilters): Promise<ProviderResult> {
       (data.results || []).map<Job>((job) => {
         const description = stripHtml(job.contents || '')
         const locations = job.locations?.map((location) => location.name).filter(Boolean) || []
+        const displayLocation =
+          locations.length === 1 && locations[0].toLowerCase() === 'flexible / remote'
+            ? 'United States Remote'
+            : locations.join(', ') || 'United States'
         const levels = job.levels?.map((level) => level.name).filter(Boolean) || []
         const categories = job.categories?.map((category) => category.name).filter(Boolean) || []
         const tags =
@@ -435,7 +443,7 @@ async function fetchTheMuseJobs(filters: JobFilters): Promise<ProviderResult> {
           id: `themuse-${job.id}`,
           title: stripHtml(job.name),
           company: stripHtml(job.company?.name || 'Company not listed'),
-          location: locations.join(', ') || 'United States',
+          location: displayLocation,
           workMode: inferWorkMode(`${job.name} ${locations.join(' ')} ${description}`),
           source: 'The Muse',
           url: job.refs?.landing_page || `https://www.themuse.com/jobs/${job.id}`,

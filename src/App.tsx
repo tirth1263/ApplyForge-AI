@@ -48,6 +48,7 @@ import {
   deleteSavedJob,
   emptyProfile,
   generateApplicationAssets,
+  isAllowedUsEnglishJob,
   saveApplication,
   saveJob,
   saveUserProfile,
@@ -164,7 +165,7 @@ function App() {
       try {
         const response = await searchJobs(initialFilters)
         if (!active) return
-        setJobs(response.jobs)
+        setJobs(response.jobs.filter(isAllowedUsEnglishJob))
         setProviders(response.providers)
         setSelectedJob(response.jobs[0] ?? null)
         setStatus(`${response.jobs.length} English US roles loaded`)
@@ -310,7 +311,7 @@ function App() {
     setFilters(usFilters)
     try {
       const response = await searchJobs(usFilters)
-      setJobs(response.jobs)
+      setJobs(response.jobs.filter(isAllowedUsEnglishJob))
       setProviders(response.providers)
       setSelectedJob(response.jobs[0] ?? null)
       setStatus(`${response.jobs.length} English US roles found`)
