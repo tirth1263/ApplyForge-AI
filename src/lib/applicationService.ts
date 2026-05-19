@@ -227,22 +227,10 @@ export async function generateApplicationAssets(
 }
 
 export async function searchJobs(filters: JobFilters): Promise<SearchResponse> {
-  const realJobs = await searchPublicJobSources(filters)
-  if (realJobs.jobs.length) {
-    return realJobs
-  }
-
-  if (functions) {
-    try {
-      const search = httpsCallable<JobFilters, SearchResponse>(functions, 'searchJobs')
-      const response = await search(filters)
-      return response.data
-    } catch (error) {
-      console.warn('Falling back to local job search', error)
-    }
-  }
-
-  return { jobs: [], providers: ['No real jobs returned from connected sources'] }
+  return searchPublicJobSources({
+    ...filters,
+    location: 'United States',
+  })
 }
 
 export async function saveApplication(
@@ -373,27 +361,27 @@ async function searchPublicJobSources(filters: JobFilters): Promise<SearchRespon
   const results = await Promise.allSettled([
     fetchTheMuseJobs(filters),
     fetchRemotiveJobs(filters),
-    fetchArbeitnowJobs(),
   ])
 
-  const providers: string[] = []
   const jobs = results.flatMap((result) => {
     if (result.status === 'rejected') {
       console.warn('Real job provider failed', result.reason)
       return []
     }
 
-    if (result.value.jobs.length) providers.push(result.value.provider)
     return result.value.jobs
   })
 
+  const filteredJobs = dedupeJobs(jobs)
+    .filter((job) => filterRealJob(job, filters))
+    .filter(isEnglishJob)
+    .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
+    .slice(0, 500)
+  const providers = Array.from(new Set(filteredJobs.map((job) => job.source)))
+
   return {
-    jobs: dedupeJobs(jobs)
-      .filter((job) => filterRealJob(job, filters))
-      .filter(isEnglishJob)
-      .sort((a, b) => Date.parse(b.postedAt || '0') - Date.parse(a.postedAt || '0'))
-      .slice(0, 500),
-    providers,
+    jobs: filteredJobs,
+    providers: providers.length ? providers : ['No US English roles returned from connected sources'],
   }
 }
 
@@ -505,46 +493,6 @@ async function fetchRemotiveJobs(filters: JobFilters): Promise<ProviderResult> {
   }
 }
 
-async function fetchArbeitnowJobs(): Promise<ProviderResult> {
-  const response = await fetch('https://www.arbeitnow.com/api/job-board-api')
-  if (!response.ok) throw new Error(`Arbeitnow failed with ${response.status}`)
-
-  const data = (await response.json()) as {
-    data?: Array<{
-      slug: string
-      company_name: string
-      title: string
-      description?: string
-      remote?: boolean
-      url: string
-      tags?: string[]
-      job_types?: string[]
-      location?: string
-      created_at?: number
-    }>
-  }
-
-  return {
-    provider: 'Arbeitnow',
-    jobs:
-      data.data?.map<Job>((job) => {
-        const description = stripHtml(job.description || '')
-        return {
-          id: `arbeitnow-${job.slug}`,
-          title: stripHtml(job.title),
-          company: stripHtml(job.company_name),
-          location: job.location || (job.remote ? 'Remote' : 'Europe'),
-          workMode: job.remote ? 'remote' : inferWorkMode(`${job.location} ${description}`),
-          source: 'Arbeitnow',
-          url: job.url,
-          description: description.slice(0, 760),
-          postedAt: job.created_at ? new Date(job.created_at * 1000).toISOString() : undefined,
-          tags: [...(job.job_types || []), ...(job.tags || [])].filter(Boolean).slice(0, 7),
-        }
-      }) || [],
-  }
-}
-
 function filterRealJob(job: Job, filters: JobFilters) {
   const normalizedQuery = filters.query.trim().toLowerCase()
   const normalizedLocation = normalizeLocationFilter(filters.location)
@@ -597,14 +545,15 @@ function normalizeLocationFilter(location: string): NormalizedLocationFilter {
         'united states of america',
         'usa',
         'u.s.',
+        'u.s. only',
         'us only',
-        'north america',
-        'americas',
-        'america',
-        'worldwide',
-        'global',
-        'remote',
-        'flexible / remote',
+        'us-based',
+        'us based',
+        'remote us',
+        'remote - us',
+        'remote (us)',
+        'within the us',
+        'in the us',
       ],
     }
   }
@@ -623,16 +572,18 @@ function normalizeLocationFilter(location: string): NormalizedLocationFilter {
 }
 
 function matchesLocationFilter(job: Job, normalizedLocation: NormalizedLocationFilter) {
-  if (!normalizedLocation.locationQuery || normalizedLocation.locationQuery.toLowerCase() === 'remote') {
-    return true
-  }
+  if (!normalizedLocation.locationQuery || normalizedLocation.locationQuery.toLowerCase() === 'remote') return false
 
-  const locationHaystack = `${job.location} ${job.description}`.toLowerCase()
+  const locationHaystack = `${job.location} ${job.title} ${job.description}`.toLowerCase()
   if (normalizedLocation.aliases.some((alias) => locationHaystack.includes(alias))) return true
 
   if (normalizedLocation.region === 'us') {
     const listedLocation = job.location.toLowerCase()
-    return US_STATE_NAMES.some((state) => listedLocation.includes(state)) || US_STATE_CODE_PATTERN.test(job.location)
+    if (US_STATE_NAMES.some((state) => listedLocation.includes(state)) || US_STATE_CODE_PATTERN.test(job.location)) {
+      return true
+    }
+
+    return job.source === 'The Muse' && listedLocation.includes('flexible / remote')
   }
 
   return false
@@ -681,21 +632,24 @@ function isEnglishJob(job: Job) {
   if (!text) return false
 
   const sample = text.slice(0, 1200)
+  const normalizedSample = sample.toLowerCase()
+  const nonEnglishSignals =
+    normalizedSample.match(
+      /\b(ausbildung|fachinformatiker|systemintegration|bewerbung|bewerben|aufgaben|kenntnisse|abgeschlossene|deutsch|german|berlin|munich|hamburg|koln|frankfurt|und|oder|nicht|deine|fur|eine|einen|unser|unsere|vous|nous|avec|pour|dans|les|des|para|con|por)\b/g,
+    )?.length || 0
+  if (nonEnglishSignals >= 2) return false
+
   const letters = sample.match(/[A-Za-z]/g)?.length || 0
   const nonAscii = countNonAscii(sample)
   const commonEnglishWords =
-    sample
-      .toLowerCase()
-      .match(/\b(the|and|for|with|you|your|our|team|role|work|experience|skills|will|are|to|of|in)\b/g)
+    normalizedSample.match(/\b(the|and|for|with|you|your|our|team|role|work|experience|skills|will|are|to|of|in)\b/g)
       ?.length || 0
   const foreignMarkers =
-    sample
-      .toLowerCase()
-      .match(
-        /\b(und|oder|nicht|deine|aufgaben|bewerbung|fur|mit|eine|einen|des|der|die|das|unser|unsere|vous|nous|avec|pour|dans|les|des|el|la|los|para|con|por)\b/g,
-      )?.length || 0
+    normalizedSample.match(
+      /\b(und|oder|nicht|deine|aufgaben|bewerbung|fur|mit|eine|einen|des|der|die|das|unser|unsere|vous|nous|avec|pour|dans|les|des|el|la|los|para|con|por)\b/g,
+    )?.length || 0
 
-  return letters > 80 && nonAscii / Math.max(sample.length, 1) < 0.08 && commonEnglishWords >= 4 && foreignMarkers <= 3
+  return letters > 80 && nonAscii / Math.max(sample.length, 1) < 0.04 && commonEnglishWords >= 5 && foreignMarkers <= 1
 }
 
 function countNonAscii(value: string) {

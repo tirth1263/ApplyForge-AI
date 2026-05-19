@@ -35,6 +35,15 @@
   gap: 12px;
 }
 
+.brand-button {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .brand-mark {
   display: grid;
   place-items: center;
@@ -177,6 +186,11 @@ progress::-webkit-progress-value {
 .workspace {
   min-width: 0;
   padding: 28px;
+}
+
+.page-stack {
+  display: grid;
+  gap: 18px;
 }
 
 .topbar {
@@ -386,6 +400,42 @@ h3 {
   align-items: start;
 }
 
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.workflow-card {
+  display: grid;
+  gap: 10px;
+  min-height: 178px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--surface-glass);
+  box-shadow: var(--shadow);
+  text-align: left;
+  cursor: pointer;
+}
+
+.workflow-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--panel-glow), var(--shadow);
+}
+
+.workflow-card .panel-icon {
+  margin-bottom: 4px;
+}
+
+.workflow-card p,
+.quiet-copy {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .primary-column,
 .insights-column {
   display: grid;
@@ -523,6 +573,27 @@ textarea:focus {
   background: var(--surface-strong);
 }
 
+.selection-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(40, 100, 92, 0.42);
+  border-radius: 8px;
+  background: var(--teal-soft);
+}
+
+.selection-banner div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.selection-banner p {
+  color: var(--muted);
+}
+
 .board-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -654,6 +725,10 @@ textarea:focus {
   gap: 8px;
 }
 
+.job-actions select {
+  width: 140px;
+}
+
 .studio-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.92fr) minmax(340px, 1.08fr);
@@ -666,6 +741,20 @@ textarea:focus {
 .company-list {
   display: grid;
   gap: 12px;
+}
+
+.profile-form.wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.resume-page textarea {
+  min-height: 260px;
+}
+
+.saved-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 10px;
 }
 
 .two-fields {
@@ -943,6 +1032,9 @@ pre {
   .metric-grid,
   .filters,
   .board-grid,
+  .quick-grid,
+  .saved-toolbar,
+  .profile-form.wide,
   .studio-grid,
   .tracker-grid,
   .status-grid {
