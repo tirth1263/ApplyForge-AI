@@ -1,4 +1,5 @@
-import { initializeApp, type FirebaseApp } from 'firebase/app'
+import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app'
+import { getAnalytics, isSupported, type Analytics } from 'firebase/analytics'
 import {
   getAuth,
   GoogleAuthProvider,
@@ -10,14 +11,27 @@ import { getFirestore, type Firestore } from 'firebase/firestore'
 import { getFunctions, type Functions } from 'firebase/functions'
 import { getStorage, type FirebaseStorage } from 'firebase/storage'
 
+const fallbackFirebaseConfig = {
+  apiKey: 'AIzaSyC-qnB_qCiIu7_kMVXKnEqx06xI-B6dk0k',
+  authDomain: 'applyforge-ai.firebaseapp.com',
+  projectId: 'applyforge-ai',
+  storageBucket: 'applyforge-ai.firebasestorage.app',
+  messagingSenderId: '75705445753',
+  appId: '1:75705445753:web:e93c115944ba16c13bd3a8',
+  measurementId: 'G-1Z7KP10G1H',
+}
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || fallbackFirebaseConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || fallbackFirebaseConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || fallbackFirebaseConfig.projectId,
+  storageBucket:
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackFirebaseConfig.storageBucket,
+  messagingSenderId:
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || fallbackFirebaseConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
+  measurementId:
+    import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || fallbackFirebaseConfig.measurementId,
 }
 
 export const firebaseConfigIsComplete = [
@@ -34,16 +48,24 @@ let auth: Auth | undefined
 let db: Firestore | undefined
 let functions: Functions | undefined
 let storage: FirebaseStorage | undefined
+let analytics: Analytics | undefined
 
 if (firebaseConfigIsComplete) {
-  app = initializeApp(firebaseConfig)
+  app = getApps().length ? getApp() : initializeApp(firebaseConfig)
   auth = getAuth(app)
+  auth.useDeviceLanguage()
   db = getFirestore(app)
   functions = getFunctions(app, import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'us-central1')
   storage = getStorage(app)
+
+  void isSupported().then((supported) => {
+    if (supported && app) {
+      analytics = getAnalytics(app)
+    }
+  })
 }
 
-export { app, auth, db, functions, storage }
+export { app, auth, db, functions, storage, analytics, firebaseConfig }
 
 export async function signInWithGoogle() {
   if (!auth) {

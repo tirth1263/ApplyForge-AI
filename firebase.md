@@ -45,6 +45,16 @@ The Firebase CLI project is stored in `.firebaserc`.
 
 If the app shows `auth/configuration-not-found`, Firebase Auth is not initialized for the `applyforge-ai` project yet.
 
+I verified the web app SDK config through Firebase CLI, and it matches the app:
+
+```text
+projectId: applyforge-ai
+appId: 1:75705445753:web:e93c115944ba16c13bd3a8
+authDomain: applyforge-ai.firebaseapp.com
+```
+
+I also enabled the underlying Identity Toolkit API. The remaining Firebase Auth initialization step is blocked from CLI/API on the current project plan with `BILLING_NOT_ENABLED`, so it must be completed in the Firebase Console unless billing is enabled.
+
 1. Open [Firebase Authentication providers](https://console.firebase.google.com/project/applyforge-ai/authentication/providers).
 2. Click **Get started** if Firebase asks you to initialize Authentication.
 3. Enable **Google** as a sign-in provider.
